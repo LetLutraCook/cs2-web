@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>3D First Person Explorer</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="bg-gray-900 text-white">
+
+  <!-- Canvas Container -->
+  <div id="canvas-container" class="w-full h-full relative"></div>
+
+  <!-- Central Crosshair (Green fill with black outline) -->
+  <div id="crosshair">
+    <svg width="32" height="32" viewBox="0 0 32 32">
+      <rect x="14.5" y="4" width="3" height="8" rx="1" fill="#00FF00" stroke="#000000" stroke-width="1.2" />
+      <rect x="14.5" y="20" width="3" height="8" rx="1" fill="#00FF00" stroke="#000000" stroke-width="1.2" />
+      <rect x="4" y="14.5" width="8" height="3" rx="1" fill="#00FF00" stroke="#000000" stroke-width="1.2" />
+      <rect x="20" y="14.5" width="8" height="3" rx="1" fill="#00FF00" stroke="#000000" stroke-width="1.2" />
+      <circle cx="16" cy="16" r="2" fill="#00FF00" stroke="#000000" stroke-width="1.2" />
+    </svg>
+  </div>
+
+  <!-- HUD Overlay -->
+  <div class="absolute top-4 right-4 bg-black/60 backdrop-blur-md p-3 rounded-xl border border-white/10 text-xs space-y-1 pointer-events-none z-10">
+    <div><strong>Position:</strong> <span id="hud-pos">0.0, 0.0, 0.0</span></div>
+    <div><strong>State:</strong> <span id="hud-state">Standing</span></div>
+  </div>
+
+  <!-- Top-Left Menu Button -->
+  <button id="menu-btn" class="absolute top-4 left-4 z-40 bg-black/60 hover:bg-black/80 backdrop-blur-md text-white px-4 py-2 rounded-xl border border-white/20 font-medium shadow-lg transition pointer-events-auto">
+    Menu
+  </button>
+
+  <!-- Start / Lock Overlay -->
+  <div id="overlay" class="absolute inset-0 bg-black/75 backdrop-blur-sm flex flex-col items-center justify-center z-40 pointer-events-auto">
+    <div class="text-center p-6 bg-gray-800/90 rounded-2xl border border-white/10 max-w-sm shadow-2xl mx-4">
+      <h1 class="text-2xl font-bold mb-2 text-emerald-400">3D First Person Explorer</h1>
+      <p class="text-gray-300 text-sm mb-4">Click or tap below to start exploring.</p>
+      <div class="text-xs text-gray-400 space-y-1 text-left bg-black/40 p-3 rounded-lg border border-white/5 mb-4">
+        <div><span class="text-white font-mono">WASD</span> : Move</div>
+        <div><span class="text-white font-mono">SHIFT</span> : Walk (Silent)</div>
+        <div><span class="text-white font-mono">CTRL</span> : Crouch</div>
+        <div><span class="text-white font-mono">SPACE</span> : Jump</div>
+        <div><span class="text-white font-mono">MOUSE/TOUCH</span> : Look</div>
+      </div>
+      <button id="start-btn" class="px-6 py-3 bg-emerald-500 hover:bg-emerald-600 text-black font-bold rounded-xl transition w-full shadow-lg pointer-events-auto cursor-pointer">
+        Start Exploring
+      </button>
+    </div>
+  </div>
+
+  <!-- Settings / Menu Modal -->
+  <div id="settings-modal" class="hidden absolute inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-50 pointer-events-auto">
+    <div class="bg-gray-800 p-6 rounded-2xl border border-white/10 max-w-md w-full m-4 shadow-2xl">
+      <h2 class="text-xl font-bold mb-4 text-emerald-400 flex justify-between items-center">
+        <span>Settings & Controls</span>
+        <button id="close-modal-btn" class="text-gray-400 hover:text-white text-xl p-1">&times;</button>
+      </h2>
+      
+      <div class="space-y-4 text-sm">
+        <div class="flex items-center justify-between">
+          <label for="touch-toggle">Touch Controls</label>
+          <input type="checkbox" id="touch-toggle" class="w-5 h-5 accent-emerald-500 rounded cursor-pointer">
+        </div>
+        
+        <div class="flex items-center justify-between">
+          <label for="audio-toggle">Footstep Audio</label>
+          <input type="checkbox" id="audio-toggle" checked class="w-5 h-5 accent-emerald-500 rounded cursor-pointer">
+        </div>
+
+        <div>
+          <label for="sens-range" class="block mb-1">Mouse Sensitivity (eDPI scaling)</label>
+          <input type="range" id="sens-range" min="0.0002" max="0.002" step="0.0001" value="0.00065" class="w-full accent-emerald-500">
+        </div>
+      </div>
+
+      <button id="resume-btn" class="mt-6 w-full py-3 bg-emerald-500 hover:bg-emerald-600 text-black font-bold rounded-xl transition cursor-pointer">
+        Resume Game
+      </button>
+    </div>
+  </div>
+
+  <!-- Mobile Touch Controls Layer -->
+  <div id="touch-controls" class="hidden absolute inset-0 pointer-events-none z-30">
+    <canvas id="joystick-canvas" class="absolute left-0 bottom-0 w-1/2 h-full pointer-events-auto"></canvas>
+    <div id="trackpad-area" class="absolute right-0 top-0 w-1/2 h-full pointer-events-auto"></div>
+    
+    <!-- Action Buttons -->
+    <div id="btn-jump" class="touch-btn w-14 h-14 right-6 bottom-24">JUMP</div>
+    <div id="btn-crouch" class="touch-btn w-14 h-14 right-24 bottom-8">CRCH</div>
+    <div id="btn-walk" class="touch-btn w-14 h-14 right-6 bottom-8">WALK</div>
+  </div>
+
+  <script>
+    const MOUSE_SENSITIVITY_DEFAULT = 0.00065;
+    let mouseSensitivity = MOUSE_SENSITIVITY_DEFAULT;
+    
+    const STAND_HEIGHT = 1.7;
+    const CROUCH_HEIGHT = 0.9;
+    const RUN_SPEED = 12.0;
+    const WALK_SPEED = 5.5;
+    const CROUCH_SPEED = 4.5;
+    const JUMP_FORCE = 8.5;
+    const GRAVITY = 26.0;
+    const PLAYER_RADIUS = 0.6;
+
+    let enableAudio = true;
+    let forceTouchControls = false;
+
+    const keys = {};
+    const player = {
+      position: new THREE.Vector3(0, STAND_HEIGHT, 0),
+      velocity: new THREE.Vector3(),
+      rotation: new THREE.Euler(0, 0, 0, 'YXZ'),
+      onGround: true,
+      isCrouching: false,
+      isWalking: false,
+      eyeHeight: STAND_HEIGHT
+    };
+
+    const colliders = [];
+
+    const container = document.getElementById('canvas-container');
+    const scene = new THREE.Scene();
+    scene.fog = new THREE.FogExp2(0xd0e0f0, 0.008);
+
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    container.appendChild(renderer.domElement);
+
+    let audioCtx = null;
+    let lastStepTime = 0;
+
+    function initAudio() {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+    }
+
+    function playFootstepSound() {
+      if (!enableAudio || !audioCtx) return;
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      const filter = audioCtx.createBiquadFilter();
+
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(120, audioCtx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(30, audioCtx.currentTime + 0.08);
+
+      filter.type = 'lowpass';
+      filter.frequency.value = 300;
+
+      gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.08);
+
+      osc.connect(filter);
+      filter.connect(gain);
+      gain.connect(audioCtx.destination);
+
+      osc.start();
+      osc.stop(audioCtx.currentTime + 0.08);
+    }
+
+    function buildEnvironment() {
+      // Sky Dome
+      const skyGeo = new THREE.SphereGeometry(500, 32, 15);
+      const skyMat = new THREE.ShaderMaterial({
+        uniforms: {
+          topColor: { value: new THREE.Color(0x0f2b5c) },
+          bottomColor: { value: new THREE.Color(0x99ccff) },
+          offset: { value: 20 },
+          exponent: { value: 0.6 }
+        },
+        vertexShader: `
+          varying vec3 vWorldPosition;
+          void main() {
+            vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+            vWorldPosition = worldPosition.xyz;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          }
+        `,
+        fragmentShader: `
+          uniform vec3 topColor;
+          uniform vec3 bottomColor;
+          uniform float offset;
+          uniform float exponent;
+          varying vec3 vWorldPosition;
+          void main() {
+            float h = normalize(vWorldPosition + offset).y;
+            gl_FragColor = vec4(mix(bottomColor, topColor, max(pow(max(h, 0.0), exponent), 0.0)), 1.0);
+          }
+        `,
+        side: THREE.BackSide
+      });
+      scene.add(new THREE.Mesh(skyGeo, skyMat));
+
+      // Light & Sun
+      const light = new THREE.DirectionalLight(0xfff5ea, 1.3);
+      light.position.set(60, 100, 40);
+      light.castShadow = true;
+      light.shadow.mapSize.width = 2048;
+      light.shadow.mapSize.height = 2048;
+      light.shadow.camera.near = 0.5;
+      light.shadow.camera.far = 300;
+      const d = 100;
+      light.shadow.camera.left = -d;
+      light.shadow.camera.right = d;
+      light.shadow.camera.top = d;
+      light.shadow.camera.bottom = -d;
+      light.shadow.bias = -0.0005;
+      scene.add(light);
+
+      const ambientLight = new THREE.AmbientLight(0x8899b0, 0.5);
+      scene.add(ambientLight);
+
+      const sunGeo = new THREE.SphereGeometry(6, 32, 32);
+      const sunMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+      const sunMesh = new THREE.Mesh(sunGeo, sunMat);
+      sunMesh.position.copy(light.position);
+      scene.add(sunMesh);
+
+      // Simple Ground Plane
+      const groundGeo = new THREE.PlaneGeometry(300, 300);
+      const groundMat = new THREE.MeshStandardMaterial({ color: 0x333842, roughness: 0.8 });
+      const ground = new THREE.Mesh(groundGeo, groundMat);
+      ground.rotation.x = -Math.PI / 2;
+      ground.receiveShadow = true;
+      scene.add(ground);
+
+      // Simple Grid Helper overlaid
+      const grid = new THREE.GridHelper(300, 60, 0x555555, 0x444444);
+      grid.position.y = 0.01;
+      scene.add(grid);
+
+      // A few simple aesthetic pillars/boxes for reference
+      function addPillar(x, z, h = 6) {
+        const geo = new THREE.BoxGeometry(4, h, 4);
+        const mat = new THREE.MeshStandardMaterial({ color: 0x667085, roughness: 0.7 });
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.position.set(x, h / 2, z);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        scene.add(mesh);
+        colliders.push(new THREE.Box3().setFromObject(mesh));
+      }
+
+      addPillar(-20, -20, 8);
+      addPillar(25, -30, 5);
+      addPillar(-15, 25, 6);
+      addPillar(30, 20, 10);
+    }
+
+    buildEnvironment();
+
+    document.addEventListener('keydown', (e) => { keys[e.code] = true; });
+    document.addEventListener('keyup', (e) => { keys[e.code] = false; });
+
+    const overlay = document.getElementById('overlay');
+    const startBtn = document.getElementById('start-btn');
+
+    function startGameSession(e) {
+      if (e) e.stopPropagation();
+      initAudio();
+      overlay.classList.add('hidden');
+      if (!isMobileDevice() && !forceTouchControls) {
+        document.body.requestPointerLock();
+      }
+    }
+
+    startBtn.addEventListener('click', startGameSession);
+    startBtn.addEventListener('touchstart', startGameSession);
+
+    document.addEventListener('pointerlockchange', () => {
+      if (document.pointerLockElement === document.body) {
+        overlay.classList.add('hidden');
+      } else if (document.getElementById('settings-modal').classList.contains('hidden') && !isMobileDevice() && !forceTouchControls) {
+        overlay.classList.remove('hidden');
+      }
+    });
+
+    document.addEventListener('mousemove', (e) => {
+      if (document.pointerLockElement === document.body) {
+        player.rotation.y -= e.movementX * mouseSensitivity;
+        player.rotation.x -= e.movementY * mouseSensitivity;
+        player.rotation.x = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, player.rotation.x));
+      }
+    });
+
+    const joystickCanvas = document.getElementById('joystick-canvas');
+    const joystickCtx = joystickCanvas.getContext('2d');
+    const trackpadArea = document.getElementById('trackpad-area');
+
+    let joystickActive = false;
+    let joystickTouchId = null;
+    let joystickOrigin = { x: 0, y: 0 };
+    let joystickCurrent = { x: 0, y: 0 };
+    let touchMoveVector = { x: 0, y: 0 };
+
+    let trackpadTouchId = null;
+    let trackpadLastPos = { x: 0, y: 0 };
+
+    function resizeTouchCanvas() {
+      joystickCanvas.width = joystickCanvas.clientWidth;
+      joystickCanvas.height = joystickCanvas.clientHeight;
+    }
+    window.addEventListener('resize', resizeTouchCanvas);
+    resizeTouchCanvas();
+
+    joystickCanvas.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      if (joystickActive) return;
+      const touch = e.changedTouches[0];
+      joystickActive = true;
+      joystickTouchId = touch.identifier;
+      const rect = joystickCanvas.getBoundingClientRect();
+      joystickOrigin = { x: touch.clientX - rect.left, y: touch.clientY - rect.top };
+      joystickCurrent = { ...joystickOrigin };
+    });
+
+    joystickCanvas.addEventListener('touchmove', (e) => {
+      e.preventDefault();
+      for (let touch of e.changedTouches) {
+        if (touch.identifier === joystickTouchId) {
+          const rect = joystickCanvas.getBoundingClientRect();
+          joystickCurrent = { x: touch.clientX - rect.left, y: touch.clientY - rect.top };
+          
+          let dx = joystickCurrent.x - joystickOrigin.x;
+          let dy = joystickCurrent.y - joystickOrigin.y;
+          let dist = Math.hypot(dx, dy);
+          let maxR = 50;
+          if (dist > maxR) {
+            dx = (dx / dist) * maxR;
+            dy = (dy / dist) * maxR;
+          }
+          touchMoveVector.x = dx / maxR;
+          touchMoveVector.y = dy / maxR;
+        }
+      }
+    });
+
+    function resetJoystick() {
+      joystickActive = false;
+      joystickTouchId = null;
+      touchMoveVector = { x: 0, y: 0 };
+      drawJoystick();
+    }
+
+    joystickCanvas.addEventListener('touchend', resetJoystick);
+    joystickCanvas.addEventListener('touchcancel', resetJoystick);
+
+    function drawJoystick() {
+      joystickCtx.clearRect(0, 0, joystickCanvas.width, joystickCanvas.height);
+      if (!joystickActive) return;
+
+      joystickCtx.beginPath();
+      joystickCtx.arc(joystickOrigin.x, joystickOrigin.y, 50, 0, Math.PI * 2);
+      joystickCtx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+      joystickCtx.fill();
+      joystickCtx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+      joystickCtx.lineWidth = 2;
+      joystickCtx.stroke();
+
+      joystickCtx.beginPath();
+      joystickCtx.arc(
+        joystickOrigin.x + touchMoveVector.x * 50,
+        joystickOrigin.y + touchMoveVector.y * 50,
+        25, 0, Math.PI * 2
+      );
+      joystickCtx.fillStyle = 'rgba(52, 211, 153, 0.6)';
+      joystickCtx.fill();
+    }
+
+    trackpadArea.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      if (trackpadTouchId !== null) return;
+      const touch = e.changedTouches[0];
+      trackpadTouchId = touch.identifier;
+      trackpadLastPos = { x: touch.clientX, y: touch.clientY };
+    });
+
+    trackpadArea.addEventListener('touchmove', (e) => {
+      e.preventDefault();
+      for (let touch of e.changedTouches) {
+        if (touch.identifier === trackpadTouchId) {
+          let dx = touch.clientX - trackpadLastPos.x;
+          let dy = touch.clientY - trackpadLastPos.y;
+          
+          player.rotation.y -= dx * (mouseSensitivity * 2.5);
+          player.rotation.x -= dy * (mouseSensitivity * 2.5);
+          player.rotation.x = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, player.rotation.x));
+          
+          trackpadLastPos = { x: touch.clientX, y: touch.clientY };
+        }
+      }
+    });
+
+    function resetTrackpad() {
+      trackpadTouchId = null;
+    }
+    trackpadArea.addEventListener('touchend', resetTrackpad);
+    trackpadArea.addEventListener('touchcancel', resetTrackpad);
+
+    const btnJump = document.getElementById('btn-jump');
+    const btnCrouch = document.getElementById('btn-crouch');
+    const btnWalk = document.getElementById('btn-walk');
+
+    function bindTouchAction(elem, keyName) {
+      elem.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        keys[keyName] = true;
+        elem.classList.add('active');
+      });
+      elem.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        keys[keyName] = false;
+        elem.classList.remove('active');
+      });
+    }
+
+    bindTouchAction(btnJump, 'Space');
+    bindTouchAction(btnCrouch, 'ControlLeft');
+    bindTouchAction(btnWalk, 'ShiftLeft');
+
+    const menuBtn = document.getElementById('menu-btn');
+    const settingsModal = document.getElementById('settings-modal');
+    const closeModalBtn = document.getElementById('close-modal-btn');
+    const resumeBtn = document.getElementById('resume-btn');
+    const touchToggle = document.getElementById('touch-toggle');
+    const audioToggle = document.getElementById('audio-toggle');
+    const sensRange = document.getElementById('sens-range');
+
+    function isMobileDevice() {
+      return ('ontouchstart' in window) || navigator.maxTouchPoints > 0 || window.innerWidth <= 768;
+    }
+
+    function updateTouchVisibility() {
+      const showTouch = forceTouchControls || isMobileDevice();
+      document.getElementById('touch-controls').classList.toggle('hidden', !showTouch);
+      touchToggle.checked = showTouch;
+    }
+
+    menuBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      document.exitPointerLock();
+      settingsModal.classList.remove('hidden');
+    });
+
+    closeModalBtn.addEventListener('click', () => {
+      settingsModal.classList.add('hidden');
+    });
+
+    resumeBtn.addEventListener('click', () => {
+      settingsModal.classList.add('hidden');
+      if (!isMobileDevice() && !forceTouchControls) {
+        document.body.requestPointerLock();
+      }
+    });
+
+    touchToggle.addEventListener('change', (e) => {
+      forceTouchControls = e.target.checked;
+      updateTouchVisibility();
+    });
+
+    audioToggle.addEventListener('change', (e) => {
+      enableAudio = e.target.checked;
+    });
+
+    sensRange.addEventListener('input', (e) => {
+      mouseSensitivity = parseFloat(e.target.value);
+    });
+
+    updateTouchVisibility();
+
+    function checkCollisions(newPos) {
+      const playerBox = new THREE.Box3(
+        new THREE.Vector3(newPos.x - PLAYER_RADIUS, newPos.y - player.eyeHeight, newPos.z - PLAYER_RADIUS),
+        new THREE.Vector3(newPos.x + PLAYER_RADIUS, newPos.y + 0.2, newPos.z + PLAYER_RADIUS)
+      );
+
+      for (let collider of colliders) {
+        if (playerBox.intersectsBox(collider)) {
+          const overlapX = Math.min(playerBox.max.x - collider.min.x, collider.max.x - playerBox.min.x);
+          const overlapZ = Math.min(playerBox.max.z - collider.min.z, collider.max.z - playerBox.min.z);
+
+          if (overlapX < overlapZ) {
+            if (newPos.x > (collider.min.x + collider.max.x) / 2) newPos.x += overlapX;
+            else newPos.x -= overlapX;
+          } else {
+            if (newPos.z > (collider.min.z + collider.max.z) / 2) newPos.z += overlapZ;
+            else newPos.z -= overlapZ;
+          }
+        }
+      }
+    }
+
+    const clock = new THREE.Clock();
+
+    function animate() {
+      requestAnimationFrame(animate);
+
+      const delta = Math.min(clock.getDelta(), 0.1);
+
+      player.isCrouching = keys['ControlLeft'] || keys['ControlRight'];
+      player.isWalking = keys['ShiftLeft'] || keys['ShiftRight'];
+
+      const targetHeight = player.isCrouching ? CROUCH_HEIGHT : STAND_HEIGHT;
+      player.eyeHeight += (targetHeight - player.eyeHeight) * 12.0 * delta;
+
+      let speed = RUN_SPEED;
+      if (player.isCrouching) speed = CROUCH_SPEED;
+      else if (player.isWalking) speed = WALK_SPEED;
+
+      let inputZ = 0;
+      let inputX = 0;
+
+      if (keys['KeyW']) inputZ -= 1;
+      if (keys['KeyS']) inputZ += 1;
+      if (keys['KeyA']) inputX -= 1;
+      if (keys['KeyD']) inputX += 1;
+
+      if (touchMoveVector.x !== 0 || touchMoveVector.y !== 0) {
+        inputX = touchMoveVector.x;
+        inputZ = touchMoveVector.y;
+      }
+
+      const moveDir = new THREE.Vector3(inputX, 0, inputZ);
+      if (moveDir.lengthSq() > 1) moveDir.normalize();
+
+      moveDir.applyAxisAngle(new THREE.Vector3(0, 1, 0), player.rotation.y);
+
+      const targetVelX = moveDir.x * speed;
+      const targetVelZ = moveDir.z * speed;
+
+      const accelRate = player.onGround ? 22.0 : 1.2;
+
+      player.velocity.x += (targetVelX - player.velocity.x) * accelRate * delta;
+      player.velocity.z += (targetVelZ - player.velocity.z) * accelRate * delta;
+
+      if (keys['Space'] && player.onGround) {
+        player.velocity.y = JUMP_FORCE;
+        player.onGround = false;
+      }
+
+      player.velocity.y -= GRAVITY * delta;
+
+      const nextPos = player.position.clone();
+      nextPos.x += player.velocity.x * delta;
+      nextPos.y += player.velocity.y * delta;
+      nextPos.z += player.velocity.z * delta;
+
+      if (nextPos.y <= player.eyeHeight) {
+        nextPos.y = player.eyeHeight;
+        player.velocity.y = 0;
+        player.onGround = true;
+      }
+
+      checkCollisions(nextPos);
+      player.position.copy(nextPos);
+
+      camera.position.copy(player.position);
+      camera.rotation.copy(player.rotation);
+
+      const horizontalSpeed = Math.hypot(player.velocity.x, player.velocity.z);
+      if (player.onGround && horizontalSpeed > 6.0 && !player.isWalking && !player.isCrouching) {
+        const now = clock.getElapsedTime();
+        if (now - lastStepTime > 0.38) {
+          playFootstepSound();
+          lastStepTime = now;
+        }
+      }
+
+      drawJoystick();
+
+      document.getElementById('hud-pos').textContent = 
+        `${player.position.x.toFixed(1)}, ${player.position.y.toFixed(1)}, ${player.position.z.toFixed(1)}`;
+      
+      let stateText = 'Running';
+      if (!player.onGround) stateText = 'Airborne';
+      else if (player.isCrouching) stateText = 'Crouching';
+      else if (player.isWalking) stateText = 'Walking (Silent)';
+      document.getElementById('hud-state').textContent = stateText;
+
+      renderer.render(scene, camera);
+    }
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    animate();
+  </script>
+</body>
+</html>
