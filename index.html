@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>3D First Person Explorer</title>
+  <title>Hello world!</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <link rel="stylesheet" href="styles.css">
@@ -24,6 +24,12 @@
     </svg>
   </div>
 
+  <!-- HUD Overlay -->
+  <div class="absolute top-4 right-4 bg-black/60 backdrop-blur-md p-3 rounded-xl border border-white/10 text-xs space-y-1 pointer-events-none z-10">
+    <div><strong>Position:</strong> <span id="hud-pos">0.0, 0.0, 0.0</span></div>
+    <div><strong>State:</strong> <span id="hud-state">Standing</span></div>
+  </div>
+
   <!-- Top-Left Menu Button -->
   <button id="menu-btn" class="absolute top-4 left-4 z-40 bg-black/60 hover:bg-black/80 backdrop-blur-md text-white px-4 py-2 rounded-xl border border-white/20 font-medium shadow-lg transition pointer-events-auto">
     Menu
@@ -42,7 +48,7 @@
         <div><span class="text-white font-mono">MOUSE/TOUCH</span> : Look</div>
       </div>
       <button id="start-btn" class="px-6 py-3 bg-emerald-500 hover:bg-emerald-600 text-black font-bold rounded-xl transition w-full shadow-lg pointer-events-auto cursor-pointer">
-        Start Exploring
+        Start
       </button>
     </div>
   </div>
