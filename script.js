@@ -534,12 +534,6 @@ function animate() {
 
   drawJoystick();
 
-  let stateText = 'Running';
-  if (!player.onGround) stateText = 'Airborne';
-  else if (player.isCrouching) stateText = 'Crouching';
-  else if (player.isWalking) stateText = 'Walking (Silent)';
-  document.getElementById('hud-state').textContent = stateText;
-
   renderer.render(scene, camera);
 }
 
