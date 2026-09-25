@@ -534,9 +534,6 @@ function animate() {
 
   drawJoystick();
 
-  document.getElementById('hud-pos').textContent =
-    `${player.position.x.toFixed(1)}, ${player.position.y.toFixed(1)}, ${player.position.z.toFixed(1)}`;
-
   let stateText = 'Running';
   if (!player.onGround) stateText = 'Airborne';
   else if (player.isCrouching) stateText = 'Crouching';
